@@ -1,13 +1,53 @@
 from floggit import flog
-from kg_service import get_relevant_neighborhood
+from get_relevant_neighborhood import main as get_relevant_neighborhood
+from get_random_neighborhood import main as get_random_neighborhood
+from knowledge_curation_agent.main import main as _curate_knowledge
 
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks, Body
 
 app = FastAPI()
 
+
+from pydantic import BaseModel
+
+class CurateRequest(BaseModel):
+    query: str
+    user_id: str
+    graph_id: str
+
+@app.post('/curate_knowledge')
+def curate_knowledge_route(
+        data: CurateRequest,
+        background_tasks: BackgroundTasks = None) -> dict:
+    background_tasks.add_task(
+            _curate_knowledge,
+            graph_id=data.graph_id,
+            user_id=data.user_id,
+            query=data.query)
+    return {'message': 'All set. Any new or updated knowledge is being curated.'}
+
+
+@app.get('/random_neighborhood')
+@flog
+def random_neighborhood_route(graph_id: str) -> dict:
+    '''Returns a random neighborhood (entity plus neighbors) from the specified
+    knowledge graph.'''
+    return get_random_neighborhood(graph_id=graph_id)
+
+
+@app.get("/search")
+@flog
+def search_route(query: str, graph_id: str) -> dict:
+    '''Returns a neighborhood (a set of entities plus their neighborhoods),
+    relevant to the input query, from the specified knowledge graph.''' 
+    return get_relevant_neighborhood(query=query, graph_id=graph_id)
+
+
 @app.get("/expand_query")
-def query_route(query: str, graph_id: str) -> str:
-    """Expands a query by fetching related entities from the knowledge graph and appending them to the query."""
+@flog
+def expand_query_route(query: str, graph_id: str) -> str:
+    """Returns a paragraph that relates what is contained in the knowledge
+    graph, relevant to the input query."""
     nbhd = get_relevant_neighborhood(query=query, graph_id=graph_id)
 
     relevant_entities_str = ""

@@ -1,6 +1,6 @@
 import json
-import logging
 import os
+import random
 import networkx as nx
 from dotenv import load_dotenv
 from typing import Optional
@@ -10,28 +10,9 @@ from floggit import flog
 
 load_dotenv()
 
-@flog
-def get_relevant_neighborhood(query: str, graph_id: str) -> dict:
-    """
-    Args:
-        query (str): A user query that might be relevanet to some entities in the knowledge graph.
-        graph_id (str): The ID of the knowledge graph to query.
-
-    Returns:
-        dict: A relevant subgraph of the knowledge graph, including a surrounding neighborhood of the relevant entities (to help patching in a replacement subgraph).
-    """
-    g = _fetch_knowledge_graph(graph_id=graph_id)
-
-    relevant_entity_ids = _get_relevant_entities(
-            query=query, entities=g['entities'])
-    neighborhood = _get_knowledge_subgraph(
-            entity_ids=relevant_entity_ids, graph=g, num_hops=1)
-
-    return neighborhood
-
 
 @flog
-def _get_relevant_entities(query: str, entities: dict) -> set[str]:
+def get_relevant_entities(query: str, entities: dict) -> set[str]:
     '''Returns a set of entity IDs from the knowledge graph found in the given query.'''
     relevant_entity_ids = set()
 
@@ -44,13 +25,7 @@ def _get_relevant_entities(query: str, entities: dict) -> set[str]:
     return relevant_entity_ids
 
 
-def _get_bucket():
-    storage_client = storage.Client()
-    bucket_name = os.environ.get("KNOWLEDGE_GRAPH_BUCKET")
-    return storage_client.get_bucket(bucket_name)
-
-
-def _fetch_knowledge_graph(graph_id: str) -> dict:
+def fetch_knowledge_graph(graph_id: str) -> dict:
     """Fetches the knowledge graph from the Google Cloud Storage bucket."""
     bucket = _get_bucket()
     blob = bucket.blob(f"{graph_id}.json")
@@ -61,23 +36,8 @@ def _fetch_knowledge_graph(graph_id: str) -> dict:
         return json.loads(content)
 
 
-def _knowledge_graph_to_nx(g: dict) -> "nx.MultiDiGraph":
-    """Converts the knowledge graph dictionary to a NetworkX MultiDiGraph."""
-    mdg = nx.MultiDiGraph()
-    mdg.add_nodes_from((k, v) for k, v in g["entities"].items())
-    mdg.add_edges_from(
-        (
-            rel["source_entity_id"],
-            rel["target_entity_id"],
-            {"relationship": rel["relationship"]},
-        )
-        for rel in g.get("relationships", [])
-    )
-    return mdg
-
-
 @flog
-def _get_knowledge_subgraph(entity_ids: set[str], graph: dict, num_hops: Optional[int] = 2) -> dict:
+def get_knowledge_subgraph(entity_ids: set[str], graph: dict, num_hops: Optional[int] = 2) -> dict:
     """Extracts a subgraph from the knowledge graph centered around the given entity IDs."""
 
     mdg = _knowledge_graph_to_nx(graph)
@@ -127,3 +87,24 @@ def _get_knowledge_subgraph(entity_ids: set[str], graph: dict, num_hops: Optiona
     }
 
     return subgraph
+
+
+def _knowledge_graph_to_nx(g: dict) -> "nx.MultiDiGraph":
+    """Converts the knowledge graph dictionary to a NetworkX MultiDiGraph."""
+    mdg = nx.MultiDiGraph()
+    mdg.add_nodes_from((k, v) for k, v in g["entities"].items())
+    mdg.add_edges_from(
+        (
+            rel["source_entity_id"],
+            rel["target_entity_id"],
+            {"relationship": rel["relationship"]},
+        )
+        for rel in g.get("relationships", [])
+    )
+    return mdg
+
+
+def _get_bucket():
+    storage_client = storage.Client()
+    bucket_name = os.environ.get("KNOWLEDGE_GRAPH_BUCKET")
+    return storage_client.get_bucket(bucket_name)
